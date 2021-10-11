@@ -32,6 +32,7 @@ export type="run"
 iterations=16
 
 seamount=/mnt/lustre/vhs/seamount
+base_dir=/mnt/lustre/vhs/seasource
 mem_dir=/dev/shm/seasource/afni.results.${data}/${stamp}
 
 disk_dir=/disk0/vhs/seasource/afni.results.${data}/${stamp}
@@ -46,15 +47,16 @@ then
     out_dir=${seamount}/afni.results.${data}/${stamp}
     mkdir -p "${out_dir}"
     exec_script="${out_dir}/launch_all_$(date +"%s").sh"
+    singularity_launch="${out_dir}/singularity_launch_${fs}_$(date +"%s").$RANDOM.sh"
 else
     out_dir=${seamount}/afni.results.${data}/${stamp}
-    mkdir -p "${out_dir}" "${mem_dir}"
-    exec_script="${mem_dir}/launch_all_$(date +"%s").sh"
+    mkdir -p "${base_dir}" "${mem_dir}"
+    exec_script="${base_dir}/launch_all_$(date +"%s").sh"
+    singularity_launch="${base_dir}/singularity_launch_${fs}_$(date +"%s").$RANDOM.sh"
 fi
 
 
 all_subjects=($( cat preventAD_functional.out )) #($(ls ${top_dir}/sub-*/ses-* | grep "/ses-*" | sed 's/://g' ))
-singularity_launch="${out_dir}/singularity_launch_${fs}_$(date +"%s").$RANDOM.sh"
 echo "" > "${exec_script}"
 
 if [[ ${data} == "preventad" ]]
@@ -99,49 +101,6 @@ do
     session_output=${subject_output}/${ses}
     mkdir -p ${subject_output}
 
-#for (( i=${idx}; i<${nthreads}; i+=${iterations}))
-#do  
-#    echo "***ITERATION*** ${i}"
-#    subses=("${all_subjects[@]:${i}:${parallel}}")
-#    for sses in ${subses[@]}
-#    do
-#        outdir_it=${out_dir}/it-${i}
-#        memdir_it=${mem_dir}/it-${i}
-#        mkdir -p ${outdir_it} ${memdir_it} ${disk_dir}/it-${i}
-#        echo "***ITERATING THROUGH SUBJ***"
-#        subj=$(echo ${sses} | cut -d'/' -f 7)
-#        ses=$(echo ${sses} | cut -d'/' -f 8)
-#        anat_dir=${sses}/anat
-#        epi_dir=${sses}/func
-#
-#        if [ ! -d ${anat_dir} ] || [ ! -d ${epi_dir} ]
-#        then
-#            continue
-#            #n_idx=$(( ${idx} + ${nthreads} ))
-#            #echo "SUBJ IDX ${n_idx}"
-#            #while [ ! -d ${anat_dir} ] || [ ! -d ${epi_dir} ]
-#            #do
-#            #    nextsses="${all_subjects[${n_idx}]}"
-#            #    subj=$(echo ${nextsses} | cut -d'/' -f 7)
-#            #    ses=$(echo ${nextsses} | cut -d'/' -f 8)
-#            #    anat_dir=${nextsses}/anat
-#            #    epi_dir=${nextsses}/func
-#            #    n_idx=$(( ${n_idx} + 1 ))
-#            #    echo "SUBJ IDX ${n_idx}"
-#
-#
-#            #done
-#        fi
-#
-#        anat_files=($(ls -d ${anat_dir}/* | grep -E ".*T1w.nii.*"))
-#        epi_files=($(ls -d ${epi_dir}/* | grep -E ".*rest.*bold.*.gz"))
-#
-#        echo anat "${anat_files}"
-#        echo epi "${epi_files}"
-#
-#        subject_output=${outdir_it}/${subj}
-#        session_output=${subject_output}/${ses}
-#
     if [[ "$fs" == "sea" ]]
     then
         script_base=$(echo ${subject_output} | sed 's/seamount/seasource/g' )
@@ -168,7 +127,6 @@ do
         #echo ${canat}
 
         type="exec"
-        prog="afni_proc.py "
 
     fi
 
@@ -190,12 +148,12 @@ do
 
     singularity ${type} -B /mnt/lustre/vhs \
         -B /mnt/lustre/shared:/mnt/lustre/shared -B $PWD:$PWD \
-        -B $PWD/sea.ini:/sea/home/sea.ini -B sea_flusher.sh:/bin/sea_flusher.sh \
+        -B $PWD/sea.ini:/sea/sea.ini -B sea_flusher.sh:/bin/sea_flusher.sh \
         -B /mnt/lustre/vhs/defaultmount \
-        -B .sea_flushlist:/sea/home/.sea_flushlist \
-        -B .sea_evictlist:/sea/home/.sea_evictlist \
-        sea-afni-2021-08-09-060627837d32.sif \
-        ${prog}-subj_id ${subj} -script ${script} -scr_overwrite -blocks tshift align tlrc volreg blur mask scale \
+        -B .sea_flushlist:/sea/.sea_flushlist \
+        -B .sea_evictlist:/sea/.sea_evictlist \
+        ghcr.io_valhayot_sea-afni_master-2021-10-11-69274f207446.sif \
+        afni_proc.py -subj_id ${subj} -script ${script} -scr_overwrite -blocks tshift align tlrc volreg blur mask scale \
         -copy_anat ${anat_file} -dsets ${epi} -tcat_remove_first_trs 0 -align_opts_aea \
         -giant_move -tlrc_base ${PWD}/MNI_avg152T1+tlrc -volreg_align_to MIN_OUTLIER -volreg_align_e2a -volreg_tlrc_warp \
         -blur_size 4.0 -out_dir ${session_output} -html_review_style pythonic
@@ -204,17 +162,17 @@ do
         
 done
 echo "wait" >> ${exec_script}
+echo "SINGULARITY LAUNCH ${singularity_launch}"
 cat <<EOT >> ${singularity_launch}
 #!/bin/bash
 singularity ${type} -B /bin/strace -B /mnt/lustre/vhs \
     -B /mnt/lustre/vhs/seamount -B /mnt/lustre/shared \
     -B /mnt/lustre/vhs/defaultmount \
-    -B $PWD:$PWD -B $PWD/sea.ini:/sea/home/sea.ini \
-    -B .sea_flushlist:/sea/home/.sea_flushlist \
-    -B .sea_evictlist:/sea/home/.sea_evictlist \
+    -B $PWD:$PWD -B $PWD/sea.ini:/sea/sea.ini \
+    -B .sea_flushlist:/sea/.sea_flushlist \
+    -B .sea_evictlist:/sea/.sea_evictlist \
     -B /disk0/vhs/seasource \
-    -B $PWD/sea-app.sh:/bin/sea-app.sh -B sea_flusher.sh:/bin/sea_flusher.sh \
-    sea-afni-2021-08-09-060627837d32.sif \
+    ghcr.io_valhayot_sea-afni_master-2021-10-11-69274f207446.sif \
     bash ${exec_script}
 EOT
 chmod +x ${singularity_launch}
@@ -224,7 +182,7 @@ echo "EXP_TIMESTAMP $(date +%s)"
 
 if [[ ${fs} == "sea" ]]
 then
-    for f in $(find ${mem_dir} -follow -type f | sort); do echo ${f},$(stat -c%s "${f}") >> ${DATA_DIR}/filesizes.csv ; done
+    for f in $(find ${base_dir} -follow -type f | sort); do echo ${f},$(stat -c%s "${f}") >> ${DATA_DIR}/filesizes.csv ; done
 else
     for f in $(find ${out_dir} -follow -type f | sort); do echo ${f},$(stat -c%s "${f}") >> ${DATA_DIR}/filesizes.csv ; done
 fi
