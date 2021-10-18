@@ -30,8 +30,6 @@ then
 	done
 
 	sleep 60
-else
-	mkdir -p /scratch/vhayots/${rand_id}/defaultmount /scratch/vhayots/seamount /scratch/vhayots/${rand_id}/seasource
 fi
 
 for (( i=0; i<${totalp}; i+=${np} ))

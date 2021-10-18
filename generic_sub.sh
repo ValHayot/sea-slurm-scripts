@@ -47,7 +47,7 @@ export DATA_DIR=$4/job-${SLURM_JOB_ID}
 stamp=$(basename $4)-$RANDOM
 
 # application output directory
-output_dn=${pipeline}.scripts.${data}/${stamp}
+output_dn=${pipeline}.results.${data}/${stamp}
 
 if [[ "${fs}" == "sea" ]]
 then
