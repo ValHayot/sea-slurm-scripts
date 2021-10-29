@@ -7,7 +7,7 @@ busy=$4
 pipeline=$5
 system=$6
 
-conds=(  "sea"  "default" )
+conds=( "sea" "default" )
 stamp=$(date +%s)
 datadir=${PWD}/outputs/${totalp}subs_${np}nps_${busy}bw_${data}_${pipeline}/${stamp}
 
@@ -26,7 +26,7 @@ then
 
 	for (( i=0; i<${busy}; i+=1 ))
 	do
-	    sbatch incrementation/launch_incrementation.sh
+	    sbatch incrementation/launch_incrementation.sh 4
 	done
 
 	sleep 60
@@ -37,6 +37,12 @@ do
     conds=( $(shuf -e "${conds[@]}") )
     for c in "${conds[@]}"
     do
+        if [[ ${system} == "slashbin" ]]
+        then
+            echo "" > sea_${pipeline}/.sea_flushlist
+        else
+            cp sea_${pipeline}/.sea_flushlist_withflush sea_${pipeline}/.sea_flushlist
+        fi
         echo "sbatch --output ${datadir}/logs/%x-%j-%N.out generic_sub.sh $c $i $np ${stamp} ${data} ${rand_id} ${pipeline}"
         sbatch --job-name "${c}-${pipeline}" --output ${datadir}/logs/%x-%j-%N.out generic_sub.sh $c $i $np ${datadir} ${data} ${rand_id} ${pipeline}
     done

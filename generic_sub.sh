@@ -7,8 +7,6 @@
 #SBATCH --ntasks=1
 
 
-module load singularity/3.8
-
 set -e 
 
 # input args
@@ -18,29 +16,55 @@ nthreads="$3"
 data="$5"
 rand_id="$6"
 pipeline="$7"
+system="$8"
 
 # set container
 if [[ ${pipeline} == "fsl" ]]
 then
 	container="sea_fsl/ghcr.io_valhayot_sea-fsl_master-2021-10-15-766f50525ed8.sif"
-else
+elif [[ ${pipeline} == "afni" ]]
+then
 	container="sea_afni/ghcr.io_valhayot_sea-afni_master-2021-10-15-7a6b77d50db2.sif"
-fi
-
-# Get root of data
-if [[ ${data} == "preventad" ]]
-then
-    top_dir=$(readlink -f /home/vhayots/projects/rrg-glatard/cbrain-conp/conp-dataset/projects/preventad-open-bids/BIDS_dataset)
-elif [[ ${data} == "ds001545" ]]
-then
-    top_dir=/scratch/vhayots/ds001545
 else
-    top_dir=/scratch/vhayots/HCP
+	container="sea_spm/ghcr.io_valhayot_sea-spm_master-2021-10-15-cd52991aa994.sif"
 fi
 
-# Configure Sea environment variables
-rm -rf  ${SEA_LOCALDIR}
-mkdir -p /dev/shm/seasource /dev/shm/defaultmount ${SEA_LOCALDIR}
+if [[ ${system} == "beluga" ]]
+then
+
+    module load singularity/3.8
+
+    # Get root of data
+    if [[ ${data} == "preventad" ]]
+    then
+        top_dir=$(readlink -f /home/vhayots/projects/rrg-glatard/cbrain-conp/conp-dataset/projects/preventad-open-bids/BIDS_dataset)
+    elif [[ ${data} == "ds001545" ]]
+    then
+        top_dir=/scratch/vhayots/ds001545
+    else
+        top_dir=/scratch/vhayots/HCP
+    fi
+    export CONP_HOME=$(readlink -f /home/vhayots/projects/rrg-glatard/cbrain-conp/conp-dataset)
+    export PARALLEL_BIN=/cvmfs/soft.computecanada.ca/gentoo/2020/usr/bin/parallel
+    export RUIS_HOME=/home/vhayots/RUIS/ruis.sh
+    export LUSTRE_HOME=/scratch/vhayots
+else
+    # Get root of data
+    if [[ ${data} == "preventad" ]]
+    then
+        top_dir=/mnt/lustre/shared/preventad-open-bids/BIDS_dataset
+    elif [[ ${data} == "ds001545" ]]
+    then
+        top_dir=/mnt/lustre/shared/ds001545
+    else
+        top_dir=/mnt/lustre/shared/hcp-squashfs/HCP_1200_data
+    fi
+    export CONP_HOME=/mnt/lustre/shared/preventad-open-bids
+    export PARALLEL_BIN=/usr/bin/parallel
+    export RUIS_HOME=/home/vhs/RUIS/ruis.sh
+    export SLURM_TMPDIR=/disk0/vhs
+    export LUSTRE_HOME=/mnt/lustre/vhs
+fi
 
 
 export DATA_DIR=$4/job-${SLURM_JOB_ID}
@@ -54,11 +78,12 @@ then
     export type="run"
 
     # mountpoint path
-    seamount=/scratch/vhayots/seamount
+    export SEAMOUNT=${LUSTRE_HOME}/seamount
 
     export SEA_LOCALDIR=${SLURM_TMPDIR}/seasource
-    export SEA_BASEDIR=/scratch/vhayots/sea_${rand_id}/seasource 
+    export SEA_BASEDIR=${LUSTRE_HOME}/sea_${rand_id}/seasource 
 
+    rm -rf  ${SEA_LOCALDIR}
     mkdir -p ${SEA_LOCALDIR}
 
 else
@@ -66,15 +91,18 @@ else
 
     if [[ "${fs}" == "tmpfs" ]]
     then
-    	seamount=/dev/shm/defaultmount
+    	export SEAMOUNT=/dev/shm/defaultmount
     else
-    	seamount=/scratch/vhayots/default_${rand_id}/defaultmount
+    	export SEAMOUNT=${LUSTRE_HOME}/default_${rand_id}/defaultmount
     fi
 
     export SEA_LOCALDIR=${SLURM_TMPDIR} # not in sea so can just set it to the tmpdir to not cause issues with singularity mounts
-    export SEA_BASEDIR=${seamount} # not in sea so just mount the default mount
+    export SEA_BASEDIR=${SEAMOUNT} # not in sea so just mount the default mount
 
 fi
+
+# Configure Sea environment variables
+mkdir -p /dev/shm/seasource
 
 lustre_dir=${SEA_BASEDIR}/${output_dn}
 mem_dir=/dev/shm/seasource/${output_dn}
@@ -105,23 +133,40 @@ subses=("${all_sessions[@]:${idx}:${nthreads}}")
 for epi in ${subses[@]}
 do
     echo "***ITERATING THROUGH SESSION***"
-    subj=$(echo ${epi} | cut -d'/' -f 10)
-
-    subj_base=$(dirname $(dirname $epi))
 
     if [[ ${data} == "preventad" ]]
     then
+
+        if [[ ${system} == "beluga" ]]
+        then
+            subj=$(echo ${epi} | cut -d'/' -f 10)
+        else
+            subj=$(echo ${epi} | cut -d'/' -f 7)
+        fi
+
+        subj_base=$(dirname $(dirname $epi))
         ses=$(basename ${subj_base})
         anat_file=${subj_base}/anat/${subj}_${ses}_run-001_T1w.nii.gz
     elif [[ ${data} == "ds001545" ]]
     then
-        subj=$(echo ${epi} | cut -d'/' -f 5)
+
+        if [[ ${system} == "beluga" ]]
+        then
+            subj=$(echo ${epi} | cut -d'/' -f 5)
+        else
+            subj=$(echo ${epi} | cut -d'/' -f 6)
+        fi
 
         subj_base=$(dirname $(dirname $epi))
         ses="ses-001"
         anat_file=${subj_base}/anat/${subj}_T1w.nii.gz
     else
-    	subj=$(echo ${epi} | cut -d'/' -f 5)
+        if [[ ${system} == "beluga" ]]
+        then
+    	    subj=$(echo ${epi} | cut -d'/' -f 5)
+        else
+    	    subj=$(echo ${epi} | cut -d'/' -f 7)
+        fi
 
     	subj_base=$(dirname $(dirname $epi))
         ses=$(basename $(dirname $epi))
@@ -134,17 +179,17 @@ do
     anat_bn=$(basename ${anat_file})
     epi_bn=$(basename ${epi})
 
-    subject_output=${seamount}/${output_dn}/${subj}
+    subject_output=${SEAMOUNT}/${output_dn}/${subj}
     session_output=${subject_output}/${ses}
     script_base=${DATA_DIR}/scripts
     mkdir -p ${script_base} ${DATA_DIR}/benchmarks ${lustre_dir}/${subj}
 
     if [[ ${pipeline} == "fsl" ]]
     then
+	    mkdir -p ${lustre_dir}/${subj}/${ses}
 	    bet_file=${session_output}/${subj}_${ses}_T1w_BET.nii.gz
 
-	    echo BET FILE ${bet_file}
-
+	    echo BET DIR ${bet_file}.anat
 
 	    script=${script_base}/${subj}_${ses}_featscript.fsf
 
@@ -155,13 +200,14 @@ do
 	    export EPI=${epi}
 	    export OUTPUTDIR=${session_output}/processed
 
+        echo "epi file ${EPI}"
 	    echo "output dir ${OUTPUTDIR}.feat"
 	    multiply () {
 		local IFS='*'
 		echo "$(( $* ))"
 	    }
 
-	    info=$(singularity exec -B /scratch/vhayots ${container} fslinfo ${EPI})
+        info=$(singularity exec -B ${LUSTRE_HOME} -B ${top_dir} -B ${CONP_HOME} ${container} fslinfo ${EPI})
 	    dims=($(echo "${info}" | grep "^dim" | awk '{print $2}'))
 
 	    export TOTAL_VOXELS=$(multiply "${dims[@]}")
@@ -172,25 +218,28 @@ do
 	    echo "total volumes: ${TOTAL_VOLUMES}"
 	    echo "TR: ${TR}"
 
-	    cat ../design.fsf | envsubst > ${script}
+	    cat sea_fsl/design.fsf | envsubst > ${script}
 	    echo "bash -c \"source /usr/local/fsl/etc/fslconf/fsl.sh && fsl_anat --nocrop --nobias -i ${anat_file} -o ${bet_file} && feat ${script}\"" >> ${exec_script}
-    else
+    elif [[ ${pipeline} == "afni" ]]
+    then
 
 	    prefetch=".sea_prefetchlist"
 	    touch ${prefetch}
 
-            script=${script_base}/${subj}_${ses}_afniscript
+        script=${script_base}/${subj}_${ses}_afniscript
 	    echo "tcsh -xef ${script} ${subj}-run${RANDOM} 2>&1 ${script_base}/output.${subj}_${ses}_afniscript " >> "${exec_script}"
 
 	    cat "${exec_script}"
 
-	    singularity ${type} -B /scratch/vhayots \
-                -B /home/vhayots:/home/vhayots -B sea.ini:/sea/sea.ini \
-	        -B sea_${pipeline}/.sea_flushlist:/sea/.sea_flushlist \
+	    singularity ${type} \
+        -B sea.ini:/sea/sea.ini \
+	    -B sea_${pipeline}/.sea_flushlist:/sea/.sea_flushlist \
 		-B sea_${pipeline}/.sea_evictlist:/sea/.sea_evictlist \
 		-B ${prefetch}:/sea/.sea_prefetchlist \
+        -B ${LUSTRE_HOME} \
+        -B ${SEAMOUNT} \
 		-B ${SEA_LOCALDIR} \
-		-B $(readlink -f /home/vhayots/projects/rrg-glatard/cbrain-conp/conp-dataset) \
+		-B ${CONP_HOME} \
 		-B ${top_dir} \
 		-B ${SEA_BASEDIR} \
 		${container} \
@@ -198,9 +247,35 @@ do
 		-copy_anat ${anat_file} -dsets ${epi} -tcat_remove_first_trs 0 -align_opts_aea \
 		-giant_move -tlrc_base ${PWD}/sea_afni/MNI_avg152T1+tlrc -volreg_align_to MIN_OUTLIER -volreg_align_e2a -volreg_tlrc_warp \
 		-blur_size 4.0 -out_dir ${session_output} -html_review_style pythonic
+    else
+	mkdir -p ${lustre_dir}/${subj}/${ses}
+        anat_bn=$(basename ${anat_file} | sed 's/\.gz//g')
+        epi_bn=$(basename ${epi} | sed 's/\.gz//g')
+        s_bn=$(echo "spmscript_${RANDOM}.m")
+
+        script=${script_base}/${s_bn}
+
+        input_bn=${subj}_${ses}_input_files
+        input_dir=${lustre_dir}/${input_bn}
+
+        rm -rf ${input_dir}
+        mkdir -p ${input_dir}
+
+        cp ${anat_file} ${epi} ${input_dir}
+        gunzip ${input_dir}/*
+
+        anat_file=${input_dir}/${anat_bn}
+        epi_file=${input_dir}/${epi_bn}
+        chmod 644 ${anat_file} ${epi_file}
+
+        prefetch=".sea_prefetchlist_${stamp}_${RANDOM}"
+        echo ${input_bn}/${anat_bn} > ${prefetch}
+        echo ${input_bn}/${epi_bn} >> ${prefetch}
+        
+        source sea_spm/venv/bin/activate
+        python sea_spm/prepare_spm_template.py ${data} ${epi_file} ${anat_file} ${DATA_DIR}/scripts/${s_bn} ${SEA_LOCALDIR} ${SEAMOUNT}
+        echo "octave ${DATA_DIR}/scripts/launch_${s_bn}" >> ${exec_script}
     fi
-
-
 done
 
 export DATA_DIR=${DATA_DIR}/benchmarks
@@ -208,23 +283,26 @@ echo "SINGULARITY LAUNCH ${singularity_launch}"
 
 cat <<EOT >> ${singularity_launch}
 #!/bin/bash
-singularity ${type} -B /scratch/vhayots \
-    -B /home/vhayots:/home/vhayots -B sea.ini:/sea/sea.ini \
+singularity ${type} \
+    -B sea.ini:/sea/sea.ini \
     -B sea_${pipeline}/.sea_flushlist:/sea/.sea_flushlist \
     -B sea_${pipeline}/.sea_evictlist:/sea/.sea_evictlist \
     -B ${prefetch}:/sea/.sea_prefetchlist \
+    -B ${LUSTRE_HOME} \
+    -B ${SEAMOUNT} \
     -B ${SEA_LOCALDIR} \
-    -B $(readlink -f /home/vhayots/projects/rrg-glatard/cbrain-conp/conp-dataset) \
+    -B ${CONP_HOME} \
     -B ${top_dir} \
     -B ${SEA_BASEDIR} \
-    -B /cvmfs/soft.computecanada.ca/gentoo/2020/usr/bin/parallel \
+    -B ${PARALLEL_BIN} \
     ${container} \
-    /cvmfs/soft.computecanada.ca/gentoo/2020/usr/bin/parallel --jobs ${nthreads} < ${exec_script} || echo $?
+    ${PARALLEL_BIN} --jobs ${nthreads} < ${exec_script} || echo $?
 EOT
 chmod +x ${singularity_launch}
 
 echo "EXP_TIMESTAMP $(date +%s)"
-/home/vhayots/RUIS/ruis.sh "${singularity_launch}"
+eval "${RUIS_HOME} ${singularity_launch}"
+echo "EXP_ENDTIMESTAMP $(date +%s)"
 
 if [[ ${fs} == "sea" ]]
 then
@@ -232,3 +310,10 @@ then
 else
     for f in $(find ${lustre_dir} -follow -type f | sort); do echo ${f},$(stat -c%s "${f}") >> ${DATA_DIR}/filesizes.csv ; done
 fi
+
+if [ -f /tmp/sea.log ]
+then
+    mv /tmp/sea.log ${DATA_DIR}/sea.log
+fi
+
+rm ${prefetch}
