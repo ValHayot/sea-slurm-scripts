@@ -6,10 +6,18 @@ data=$3
 busy=$4
 pipeline=$5
 system=$6
+fs_type=$7
 
-conds=( "sea" "default" )
 stamp=$(date +%s)
-datadir=${PWD}/outputs/${totalp}subs_${np}nps_${busy}bw_${data}_${pipeline}/${stamp}
+
+if [[ "${fs_type}" == "tmpfs"* ]]
+then
+    conds=( "tmpfs" )
+    datadir=${PWD}/outputs_${fs_type}/${totalp}subs_${np}nps_${busy}bw_${data}_${pipeline}/${stamp}
+else
+    conds=( "sea" "default" )
+    datadir=${PWD}/outputs/${totalp}subs_${np}nps_${busy}bw_${data}_${pipeline}/${stamp}
+fi
 
 mkdir -p ${datadir}/logs
 
@@ -26,7 +34,7 @@ then
 
 	for (( i=0; i<${busy}; i+=1 ))
 	do
-	    sbatch incrementation/launch_incrementation.sh 4
+	    sbatch incrementation/launch_incrementation.sh 10
 	done
 
 	sleep 60
@@ -43,7 +51,7 @@ do
         else
             cp sea_${pipeline}/.sea_flushlist_withflush sea_${pipeline}/.sea_flushlist
         fi
-        echo "sbatch --output ${datadir}/logs/%x-%j-%N.out generic_sub.sh $c $i $np ${stamp} ${data} ${rand_id} ${pipeline}"
-        sbatch --job-name "${c}-${pipeline}" --output ${datadir}/logs/%x-%j-%N.out generic_sub.sh $c $i $np ${datadir} ${data} ${rand_id} ${pipeline}
+        echo "sbatch --output ${datadir}/logs/%x-%j-%N.out generic_sub.sh $c $i $np ${stamp} ${data} ${rand_id} ${pipeline} ${fs_type}"
+        sbatch --job-name "${c}-${pipeline}" --output ${datadir}/logs/%x-%j-%N.out generic_sub.sh $c $i $np ${datadir} ${data} ${rand_id} ${pipeline} ${fs_type}
     done
 done
