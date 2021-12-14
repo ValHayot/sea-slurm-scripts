@@ -33,7 +33,7 @@ print("Slice order interleaved", so)
 print("Reference slice", refslice)
 print("Output script", out_script)
 
-with open("/home/vhs/sea-slurm-scripts/sea_spm/preprocess_template_job.m", "r") as t:
+with open(os.path.join(os.path.dirname(__file__), "preprocess_template_job.m"), "r") as t:
     with open(out_script, "w+") as f:
         d = { 
               "fmriscans": fmriscans, 
@@ -51,7 +51,7 @@ script_dn = os.path.dirname(out_script)
 script_bn = os.path.basename(out_script)
 
 launch_script = os.path.join(script_dn, f"launch_{script_bn}")
-with open("/home/vhs/sea-slurm-scripts/sea_spm/launch_preprocess.m", "r") as t:
+with open(os.path.join(os.path.dirname(__file__), "launch_preprocess.m"), "r") as t:
     with open(launch_script, "w+") as f:
         d = { "out_script": script_bn.replace(".m", ""), "script_path": script_dn }
         src = Template(t.read())
