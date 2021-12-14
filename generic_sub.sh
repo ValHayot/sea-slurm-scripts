@@ -17,6 +17,7 @@ data="$5"
 rand_id="$6"
 pipeline="$7"
 system="$8"
+fs_type="$9"
 
 # set container
 if [[ ${pipeline} == "fsl" ]]
@@ -63,7 +64,7 @@ else
     export PARALLEL_BIN=/usr/bin/parallel
     export RUIS_HOME=/home/vhs/RUIS/ruis.sh
     export SLURM_TMPDIR=/disk0/vhs
-    export LUSTRE_HOME=/mnt/lustre/vhs
+    export LUSTRE_HOME=/mnt/lustre/vhs/results
 fi
 
 
@@ -81,25 +82,27 @@ then
     export SEAMOUNT=${LUSTRE_HOME}/seamount
 
     export SEA_LOCALDIR=${SLURM_TMPDIR}/seasource
-    export SEA_BASEDIR=${LUSTRE_HOME}/sea_${rand_id}/seasource 
+    export SEA_BASEDIR=${LUSTRE_HOME}/sea_${pipeline}_${data}_${SLURM_JOB_ID}/seasource 
 
     rm -rf  ${SEA_LOCALDIR}
-    mkdir -p ${SEA_LOCALDIR}
+    mkdir -p ${SEA_LOCALDIR} ${SEAMOUNT}
 
 else
     type="exec"
 
-    if [[ "${fs}" == "tmpfs" ]]
+    if [[ "${fs}" == "tmpfs"* ]]
     then
     	export SEAMOUNT=/dev/shm/defaultmount
     else
-    	export SEAMOUNT=${LUSTRE_HOME}/default_${rand_id}/defaultmount
+        export SEAMOUNT=${LUSTRE_HOME}/default_${pipeline}_${data}_${SLURM_JOB_ID}/defaultmount
     fi
 
     export SEA_LOCALDIR=${SLURM_TMPDIR} # not in sea so can just set it to the tmpdir to not cause issues with singularity mounts
     export SEA_BASEDIR=${SEAMOUNT} # not in sea so just mount the default mount
 
 fi
+
+echo "BASE DIRECTORY: ${SEA_BASEDIR}"
 
 # Configure Sea environment variables
 mkdir -p /dev/shm/seasource
@@ -147,6 +150,7 @@ do
         subj_base=$(dirname $(dirname $epi))
         ses=$(basename ${subj_base})
         anat_file=${subj_base}/anat/${subj}_${ses}_run-001_T1w.nii.gz
+        ses=${ses}_$(echo ${epi} | cut -d"_" -f4,5 )
     elif [[ ${data} == "ds001545" ]]
     then
 
@@ -158,7 +162,7 @@ do
         fi
 
         subj_base=$(dirname $(dirname $epi))
-        ses="ses-001"
+        ses=$(echo ${epi} | cut -d"_" -f 3)
         anat_file=${subj_base}/anat/${subj}_T1w.nii.gz
     else
         if [[ ${system} == "beluga" ]]
@@ -180,9 +184,20 @@ do
     epi_bn=$(basename ${epi})
 
     subject_output=${SEAMOUNT}/${output_dn}/${subj}
-    session_output=${subject_output}/${ses}
+    session_output=${subject_output}/${ses}-${RANDOM}
     script_base=${DATA_DIR}/scripts
     mkdir -p ${script_base} ${DATA_DIR}/benchmarks ${lustre_dir}/${subj}
+
+    if [[ ${fs_type} == "tmpfs_all" && ! ${pipeline} == "spm" ]]
+    then
+        input_dir="/dev/shm/inputs/${subj}_${ses}" 
+        mkdir -p ${input_dir}
+        cp ${epi} ${anat_file} ${input_dir}
+        export EPI=${input_dir}/$(basename ${epi})
+        anat_file=${input_dir}/$(basename ${anat_file})
+    else
+        export EPI=${epi}
+    fi
 
     if [[ ${pipeline} == "fsl" ]]
     then
@@ -197,7 +212,6 @@ do
 	    touch ${prefetch}
 
 	    export ANAT=${bet_file}/T1_biascorr_brain.nii.gz
-	    export EPI=${epi}
 	    export OUTPUTDIR=${session_output}/processed
 
         echo "epi file ${EPI}"
@@ -244,7 +258,7 @@ do
 		-B ${SEA_BASEDIR} \
 		${container} \
 		afni_proc.py -subj_id ${subj} -script ${script} -scr_overwrite -blocks tshift align tlrc volreg blur mask scale \
-		-copy_anat ${anat_file} -dsets ${epi} -tcat_remove_first_trs 0 -align_opts_aea \
+		-copy_anat ${anat_file} -dsets ${EPI} -tcat_remove_first_trs 0 -align_opts_aea \
 		-giant_move -tlrc_base ${PWD}/sea_afni/MNI_avg152T1+tlrc -volreg_align_to MIN_OUTLIER -volreg_align_e2a -volreg_tlrc_warp \
 		-blur_size 4.0 -out_dir ${session_output} -html_review_style pythonic
     else
@@ -307,6 +321,8 @@ echo "EXP_ENDTIMESTAMP $(date +%s)"
 if [[ ${fs} == "sea" ]]
 then
     for f in $(find ${lustre_dir} -follow -type f | sort); do echo ${f},$(stat -c%s "${f}") >> ${DATA_DIR}/filesizes.csv ; done
+    for f in $(find ${mem_dir} -follow -type f | sort); do echo ${f},$(stat -c%s "${f}") >> ${DATA_DIR}/filesizes.csv ; done
+    for f in $(find ${disk_dir} -follow -type f | sort); do echo ${f},$(stat -c%s "${f}") >> ${DATA_DIR}/filesizes.csv ; done
 else
     for f in $(find ${lustre_dir} -follow -type f | sort); do echo ${f},$(stat -c%s "${f}") >> ${DATA_DIR}/filesizes.csv ; done
 fi

@@ -5,4 +5,4 @@
 
 
 source /home/vhs/sea-slurm-scripts/sea_fmriprep/spark-venv/bin/activate
-spark-submit --master local[*] --driver-memory 200G /home/vhs/sea-slurm-scripts/sea_fmriprep/spark_inc.py /mnt/lustre/shared/bigbrain/nii/5000_blocks /mnt/lustre/vhs/increment_out 3  --cli --delay 5
+spark-submit --master local[*] --driver-memory 200G /home/vhs/sea-slurm-scripts/incrementation/spark_inc.py /mnt/lustre/shared/bigbrain/nii/5000_blocks /mnt/lustre/vhs/increment_out $1 --cli --delay 5
